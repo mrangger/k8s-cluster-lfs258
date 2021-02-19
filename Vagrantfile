@@ -1,46 +1,73 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
+VAGRANTFILE_API_VERSION = "2"
+WorkerNodeCount = 2
 
-WorkerNodes = 1
-domainName = "k8s.local"
 
-Vagrant.configure("2") do |config|
-  config.vm.box = "ubuntu/bionic64"
+masterNode = {
+  :cpus     => 2,
+  :hostname => "master",
+  :image    => "ubuntu/focal64",
+  :memory   => 3072,
+  :vmName   => "K8s Master"
+}
+
+workerNode = {
+  :cpus     => 1,
+  :hostname => "worker",
+  :image    => "ubuntu/focal64",
+  :memory   => 1024,
+  :vmName   => "K8s Worker"
+}
+
+network = {
+  :domainName => "k8s.local",
+  :podSubnet  => "192.168.88.0/24",
+  :vmSubnet   => "192.168.202."
+}
+
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  config.vm.box = masterNode[:image]
+  config.vm.provision "shell", path: "provision.sh"
   if Vagrant.has_plugin?("vagrant-cachier")
     config.cache.scope = :box
+    config.cache.synced_folder_opts = {
+       owner: "_apt",
+       group: "_apt"
+    }
   end
-  
-#  config.vm.network "public_network", use_dhcp_assigned_default_route: true
-  config.vm.network "public_network", 
-    use_dhcp_assigned_default_route: true
-  config.vm.provision "shell", path: "provision.sh"
   
   config.vm.define "master" do |master|
-#    master.vm.network "private_network", ip: "172.42.42.99", netmask: "255.255.255.0",
-#      auto_config: true,
-#      virtualbox__intnet: "k8s-net"
-    master.vm.hostname = "master.#{domainName}"  
-    master.vm.provision "shell", path: "provision_master.sh"
-    config.vm.provider "virtualbox" do |vb|
-      vb.name = "K8s Master"
-      vb.memory = 3072
-      vb.cpus = 2
+    master.vm.network "private_network", ip: network[:vmSubnet] + "5"
+    master.vm.hostname = masterNode[:hostname] + '.' + network[:domainName]
+    master.vm.provider "virtualbox" do |vb|
+      vb.cpus = masterNode[:cpus]
+      vb.memory = masterNode[:memory]
+
+      vb.linked_clone = true
+      vb.name = masterNode[:vmName]
     end
+
+    master.vm.provision "shell", path: "provision_master.sh", args: network[:podSubnet]
   end
 
-  (1..WorkerNodes).each do |i|
+  (1..WorkerNodeCount).each do |i|
     config.vm.define "worker#{i}" do |worker|
-#      worker.vm.network "private_network", ip: "172.42.42.#{i+10}", netmask: "255.255.255.0",
-#        auto_config: true,
-#        virtualbox__intnet: "k8s-net"
-      worker.vm.hostname = "worker#{i}.#{domainName}"
+      worker.vm.box = workerNode[:image]
+      worker.vm.network "private_network", ip: network[:vmSubnet] + "#{i+10}"
+      worker.vm.hostname = workerNode[:hostname] + "-#{i}." + network[:domainName]
+ 
+
       worker.vm.provider "virtualbox" do |vb|
-        vb.name = "K8s Worker #{i}"
-        vb.memory = 1024
-        vb.cpus = 1
+        vb.cpus = workerNode[:cpus]
+        vb.memory = workerNode[:memory]
+        vb.linked_clone = true
+        vb.name = workerNode[:vmName] + " #{i}"
       end
+      
 	    worker.vm.provision "shell", path: "provision_worker.sh"
 	  end
 	end
-  
 end
+

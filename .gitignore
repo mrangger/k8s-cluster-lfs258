@@ -1,2 +1,4 @@
 *~
 .vagrant
+joincluster.sh
+kubeadm-init.out
